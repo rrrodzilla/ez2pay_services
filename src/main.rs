@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate log;
+use ez2paylib::test;
 
 //use actix_service::Service;
 use actix_web::dev::Service;
@@ -36,6 +37,7 @@ async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "ez2pay=Info");
     env_logger::init();
     info!("Starting server...");
+    test();
     HttpServer::new(|| {
         App::new()
             .wrap_fn(|req, srv| {

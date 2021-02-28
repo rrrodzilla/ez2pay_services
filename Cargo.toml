@@ -5,6 +5,13 @@ authors = ["rodzilla <rolandrodriguez@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name="ez2paylib"
+path="src/lib.rs"
+
+[[bin]]
+name="ez2pay"
+path="src/main.rs"
 
 [dependencies]
 actix-web = "3"
