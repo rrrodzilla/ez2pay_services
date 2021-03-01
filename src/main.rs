@@ -6,10 +6,7 @@ use ez2paylib::test;
 use actix_web::dev::Service;
 use actix_web::http::header::CONTENT_TYPE;
 use actix_web::http::HeaderValue;
-use actix_web::{get, post, web, App, HttpMessage, HttpResponse, HttpServer, Responder, Result};
-use clap::Clap;
-//use futures::future::FutureExt;
-use pickledb::{PickleDb, PickleDbDumpPolicy};
+use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, Result};
 use serde::{Deserialize, Serialize};
 
 #[get("/")]

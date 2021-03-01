@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use pickledb::{PickleDb, PickleDbDumpPolicy};
 use serde::{Deserialize, Serialize};
 
@@ -31,12 +32,19 @@ impl Account {
 
         account
     }
+
+    //persist updates
+    fn update(&self) {
+        let mut db = get_db("accounts");
+        db.set(&self.phone_number, &self).unwrap();
+        ()
+    }
 }
 
 fn get_db(salt: &str) -> PickleDb {
     let db_name = format!("{}.db", salt);
     //first load the db if it exists, else create a new one
-    let mut db = match PickleDb::load_json(&db_name, PickleDbDumpPolicy::AutoDump) {
+    let db = match PickleDb::load_json(&db_name, PickleDbDumpPolicy::AutoDump) {
         Ok(v) => v,
         Err(_e) => PickleDb::new_json(format!("{}.db", salt), PickleDbDumpPolicy::AutoDump),
     };
@@ -45,7 +53,23 @@ fn get_db(salt: &str) -> PickleDb {
 
 pub struct Customer {}
 pub struct Order {}
-pub struct Product {}
+
+#[derive(Serialize, Deserialize)]
+pub struct Product {
+    name: String,
+    description: String,
+    price: f32,
+    tax: f32,
+    status: ProductStatus,
+    account: Account,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ProductStatus {
+    New,
+    Published,
+    Unpublished,
+}
 
 pub fn test() {
     println!("Test");
@@ -58,8 +82,15 @@ mod tests {
     #[test]
     fn test_account() {
         let p = String::from("+12063832022");
-        let a = Account::get(p.clone());
+        let sid = String::from("stripe_id");
+        let mut a = Account::get(p.clone());
         assert_eq!(p, a.phone_number);
         assert_eq!(false, a.subscriber);
+
+        //test the update
+        a.stripe_id = sid.clone();
+        a.update();
+        let updated = Account::get(a.phone_number);
+        assert_eq!(sid, updated.stripe_id);
     }
 }
