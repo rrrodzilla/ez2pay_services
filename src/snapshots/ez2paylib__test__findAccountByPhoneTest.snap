@@ -1,0 +1,11 @@
+---
+source: src/lib.rs
+expression: operation.query
+
+---
+query Query($_0: String) {
+  account(phone_number: $_0) {
+    _id
+  }
+}
+

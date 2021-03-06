@@ -1,77 +1,95 @@
 #[macro_use]
 extern crate log;
-use ez2paylib::test;
-
-//use actix_service::Service;
+extern crate dotenv;
 use actix_web::dev::Service;
 use actix_web::http::header::CONTENT_TYPE;
 use actix_web::http::HeaderValue;
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, Result};
-use serde::{Deserialize, Serialize};
-
-#[get("/")]
-async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello world!")
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use dotenv::dotenv;
+use ez2paylib::{get_account, notify_info};
+use serde::Deserialize;
+use std::env;
+#[derive(Deserialize)]
+struct ImageMessage {
+    #[serde(rename = "From")]
+    from: String,
+    #[serde(default, rename = "MediaUrl0")]
+    media_url0: String,
+    #[serde(rename = "To")]
+    to: String,
 }
 
-#[post("/run")]
-async fn run(account: web::Json<Account>) -> Result<String> {
-    info!("executing run");
-    Ok(format!("Welcome {}!", account.phone_number))
-}
+async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
+    info!("");
+    info!("From: {}", form.from);
+    info!("To: {}", form.to);
+    let id = get_account(&form.from).await;
 
-#[post("/echo")]
-async fn echo(req_body: String) -> impl Responder {
-    HttpResponse::Ok().body(req_body)
-}
-
-async fn manual_hello() -> impl Responder {
-    HttpResponse::Ok().body("Hey there!")
+    if form.media_url0.len() > 0 {
+        info!("Image: {}", &form.media_url0);
+        HttpResponse::Ok()
+    } else {
+        warn!("No image found");
+        notify_info(&form.from).await;
+        HttpResponse::Ok()
+    }
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    std::env::set_var("RUST_LOG", "ez2pay=Info");
+    //load the .env file
+    dotenv().ok();
+    //check for required vars
+    let _: &str =
+        &env::var("DB_AUTH_SECRET").unwrap_or_else(|_| panic!("DB_AUTH_SECRET must be set!"));
+
+    //set env vars
+    env::set_var(
+        "RUST_LOG",
+        format!(
+            "ez2pay={}, ez2paylib={}",
+            &env::var("RUST_LOG_EZ2PAY").unwrap_or_else(|_| "Info".into()),
+            &env::var("RUST_LOG_EZ2PAYLIB").unwrap_or_else(|_| "Info".into())
+        ),
+    );
+    let addr: &str = &env::var("ADDRESS").unwrap_or_else(|_| "127.0.0.1".into());
+    let port: &str = &env::var("PORT").unwrap_or_else(|_| "8080".into());
+    let address = format!("{}:{}", addr, port);
+
+    //begin logging
     env_logger::init();
-    info!("Starting server...");
-    test();
+    //    let a = Account::get("+12063832022".into());
+    info!("Server started and listening...");
+    info!("{}", address);
     HttpServer::new(|| {
         App::new()
             .wrap_fn(|req, srv| {
-                info!("Hi from one. You requested: {}", req.path());
+                //                info!("Hi from one. You requested: {}", req.path());
                 let fut = srv.call(req);
                 async {
                     let mut res = fut.await?;
                     res.headers_mut()
                         .insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
 
-                    info!("Updated response one");
+                    //                   info!("Updated response one");
                     Ok(res)
                 }
             })
             .wrap_fn(|req, srv| {
-                info!("Hi from two. You passed: {:#?}", req);
+                //             info!("Hi from two. You passed: {:#?}", req);
                 let fut = srv.call(req);
                 async {
                     let mut res = fut.await?;
                     res.headers_mut()
                         .insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
 
-                    info!("Updated response two");
+                    //                  info!("Updated response two");
                     Ok(res)
                 }
             })
-            .service(hello)
-            .service(run)
-            .service(echo)
-            .route("/hey", web::get().to(manual_hello))
+            .route("/input", web::post().to(ingest_image))
     })
-    .bind("127.0.0.1:8080")?
+    .bind(address.clone())?
     .run()
     .await
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-struct Account {
-    phone_number: String,
 }

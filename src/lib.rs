@@ -1,96 +1,115 @@
-#![allow(dead_code)]
-use pickledb::{PickleDb, PickleDbDumpPolicy};
-use serde::{Deserialize, Serialize};
+#![allow(dead_code, unused_imports)]
+#[macro_use]
+extern crate log;
+extern crate dotenv;
+mod mutations;
+mod queries;
+mod query_dsl;
+mod types;
+use crate::mutations::accounts::create::{CreateAccountByPhone, CreateAccountByPhoneArguments};
+use crate::queries::accounts::{FindAccountByPhone, FindAccountByPhoneArguments};
+use std::env;
+use twilio::{Client, OutboundMessage};
 
-//our account consists of a phone number, it's always tied to
-//the phone used to contact the service
-#[derive(Serialize, Deserialize)]
-pub struct Account {
-    phone_number: String,
-    stripe_id: String,
-    subscriber: bool,
-}
-
-impl Account {
-    //we're going to grab the existing account if it exists,
-    //otherwise we're going to create one and return it
-    fn get(id: String) -> Self {
-        let mut db = get_db("accounts");
-        //first try and get it
-        let account = match db.get(&id) {
-            Some(a) => a,
-            None => {
-                let acct = Account {
-                    phone_number: id.clone(),
-                    stripe_id: String::from(""),
-                    subscriber: false,
-                };
-                db.set(&id, &acct).unwrap();
-                acct
-            }
-        };
-
-        account
-    }
-
-    //persist updates
-    fn update(&self) {
-        let mut db = get_db("accounts");
-        db.set(&self.phone_number, &self).unwrap();
-        ()
-    }
-}
-
-fn get_db(salt: &str) -> PickleDb {
-    let db_name = format!("{}.db", salt);
-    //first load the db if it exists, else create a new one
-    let db = match PickleDb::load_json(&db_name, PickleDbDumpPolicy::AutoDump) {
-        Ok(v) => v,
-        Err(_e) => PickleDb::new_json(format!("{}.db", salt), PickleDbDumpPolicy::AutoDump),
+pub async fn notify_info(phone_number: &str) {
+    //using test values if real values aren't set
+    //these vars should all be moved to their own struct
+    let sid: &str =
+        &env::var("TWILIO_SID").unwrap_or_else(|_| "AC68e25593ac8571dc6b654cec468f67e7".into());
+    let secret: &str =
+        &env::var("TWILIO_SECRET").unwrap_or_else(|_| "ae037c08815fe4c48d83de8fb71af72b".into());
+    let service_phone_number: &str =
+        &env::var("EZPAY_PHONE_NUMBER").unwrap_or_else(|_| "+15005550006".into());
+    let client = twilio::Client::new(sid, secret);
+    match client.send_message(OutboundMessage::new(service_phone_number,phone_number , "To sell a product, text a picture of what you're selling.  Learn more at: https://ez2pay.me")).await {
+        Ok(_) => info!("Sent info message to {}", phone_number),
+        Err(_) => error!("Couldn't send info message")
     };
-    db
 }
 
-pub struct Customer {}
-pub struct Order {}
+//we'll want this to return an account id no matter what
+//return an existing account or create one from the incoming phone number if it's not found and
+//return the new id
+pub async fn get_account(phone_number: &str) -> String {
+    use cynic::http::SurfExt;
+    use cynic::QueryBuilder;
 
-#[derive(Serialize, Deserialize)]
-pub struct Product {
-    name: String,
-    description: String,
-    price: f32,
-    tax: f32,
-    status: ProductStatus,
-    account: Account,
-}
+    let db_secret_key: &str =
+        &env::var("DB_AUTH_SECRET").unwrap_or_else(|_| panic!("DB_AUTH_SECRET must be set!"));
+    let graphql_endpoint: &str = &env::var("GRAPHQL_ENDPOINT")
+        .unwrap_or_else(|_| "https://graphql.fauna.com/graphql".into());
+    let operation = FindAccountByPhone::build(&FindAccountByPhoneArguments {
+        phone_number: phone_number.to_string(),
+    });
+    //Zm5BRURXRTdoQ0FDQWtRS1cyLXItLTU5MlBnc1hqTDRkTkNfdTJ6VzplenBheTpzZXJ2ZXI=
+    let response = surf::post(graphql_endpoint)
+        .header("authorization", format!("Basic {}", db_secret_key))
+        .header("Accept-Encoding", "gzip, deflate, br")
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .header("Connection", "keep-alive")
+        .header("DNT", "1")
+        .run_graphql(operation)
+        .await
+        .unwrap()
+        .data
+        .unwrap()
+        .find_account_by_phone;
 
-#[derive(Serialize, Deserialize)]
-pub enum ProductStatus {
-    New,
-    Published,
-    Unpublished,
-}
-
-pub fn test() {
-    println!("Test");
+    match response {
+        Some(a) => {
+            let account = a.clone();
+            let existing_id = account.id.clone().inner().to_string();
+            info!("Retrieved Existing Account: {:?}", existing_id);
+            existing_id
+        }
+        None => {
+            //if no account was found, we need to create one
+            use cynic::MutationBuilder;
+            let operation = CreateAccountByPhone::build(&CreateAccountByPhoneArguments {
+                phone_number: phone_number.to_string(),
+            });
+            let response = surf::post(graphql_endpoint)
+                .header("authorization", format!("Basic {}", db_secret_key))
+                .header("Accept-Encoding", "gzip, deflate, br")
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .header("Connection", "keep-alive")
+                .header("DNT", "1")
+                .run_graphql(operation)
+                .await
+                .unwrap()
+                .data
+                .unwrap()
+                .create_account;
+            let new_id = response.id.inner().to_string();
+            info!("Created New Account: {:?}", new_id);
+            new_id
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
-
     #[test]
-    fn test_account() {
-        let p = String::from("+12063832022");
-        let sid = String::from("stripe_id");
-        let mut a = Account::get(p.clone());
-        assert_eq!(p, a.phone_number);
-        assert_eq!(false, a.subscriber);
+    fn new_account_by_phone_test() {
+        use crate::queries::queries::{NewAccountByPhone, NewAccountByPhoneArguments};
+        use cynic::MutationBuilder;
 
-        //test the update
-        a.stripe_id = sid.clone();
-        a.update();
-        let updated = Account::get(a.phone_number);
-        assert_eq!(sid, updated.stripe_id);
+        let operation = NewAccountByPhone::build(NewAccountByPhoneArguments {
+            phone_number: "+12063832022".to_string(),
+        });
+        insta::assert_snapshot!(operation.query);
+    }
+    #[test]
+    fn find_account_by_phone_test() {
+        use crate::queries::queries::{FindAccountByPhone, FindAccountByPhoneArguments};
+        use cynic::QueryBuilder;
+
+        let operation = FindAccountByPhone::build(FindAccountByPhoneArguments {
+            phone_number: "+12063832022".to_string(),
+        });
+        insta::assert_snapshot!(operation.query);
     }
 }

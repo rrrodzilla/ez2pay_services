@@ -1,0 +1,27 @@
+type Account {
+  phone_number: String @unique,
+  stripe_id: String
+}
+
+type Product {
+  name: String,
+  description: String,
+  image: String,
+  price: Int,
+  tax: Int,
+  status: ProductStatus!
+  account: Account!
+}
+
+enum ProductStatus {
+  PUBLISHED,
+  DISABLED,
+  NEW
+}
+
+type Query {
+  findAccountByPhone(phone_number: String): Account
+}
+
+  
+

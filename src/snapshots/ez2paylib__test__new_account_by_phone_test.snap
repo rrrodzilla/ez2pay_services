@@ -1,0 +1,11 @@
+---
+source: src/lib.rs
+expression: operation.query
+
+---
+mutation Mutation($_0: AccountInput!) {
+  createAccount(data: $_0) {
+    _id
+  }
+}
+

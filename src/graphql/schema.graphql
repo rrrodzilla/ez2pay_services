@@ -1,0 +1,123 @@
+directive @embedded on OBJECT
+directive @collection(name: String!) on OBJECT
+directive @index(name: String!) on FIELD_DEFINITION
+directive @resolver(
+  name: String
+  paginated: Boolean! = false
+) on FIELD_DEFINITION
+directive @relation(name: String) on FIELD_DEFINITION
+directive @unique(index: String) on FIELD_DEFINITION
+type Account {
+  # The document's ID.
+  _id: ID!
+  # The document's timestamp.
+  _ts: Long!
+  phone_number: String
+  stripe_id: String
+}
+
+# 'Account' input values
+input AccountInput {
+  phone_number: String
+  stripe_id: String
+}
+
+scalar Date
+
+# The `Long` scalar type
+#represents non-fractional signed whole numeric values.
+# Long can represent values between -(2^63) and 2^63 - 1.
+scalar Long
+
+type Mutation {
+  # Delete an existing document in the collection of 'Account'
+  deleteAccount(
+    # The 'Account' document's ID
+    id: ID!
+  ): Account
+  # Update an existing document in the collection of 'Account'
+  updateAccount(
+    # The 'Account' document's ID
+    id: ID!
+    # 'Account' input values
+    data: AccountInput!
+  ): Account
+  # Create a new document in the collection of 'Product'
+  createProduct(
+    # 'Product' input values
+    data: ProductInput!
+  ): Product!
+  # Update an existing document in the collection of 'Product'
+  updateProduct(
+    # The 'Product' document's ID
+    id: ID!
+    # 'Product' input values
+    data: ProductInput!
+  ): Product
+  # Create a new document in the collection of 'Account'
+  createAccount(
+    # 'Account' input values
+    data: AccountInput!
+  ): Account!
+  # Delete an existing document in the collection of 'Product'
+  deleteProduct(
+    # The 'Product' document's ID
+    id: ID!
+  ): Product
+}
+
+type Product {
+  name: String
+  image: String
+  tax: Int
+  description: String
+  # The document's ID.
+  _id: ID!
+  price: Int
+  status: ProductStatus!
+  account: Account!
+  # The document's timestamp.
+  _ts: Long!
+}
+
+# Allow manipulating the relationship between the types 'Product' and 'Account' using the field 'Product.account'.
+input ProductAccountRelation {
+  # Create a document of type 'Account' and associate it with the current document.
+  create: AccountInput
+  # Connect a document of type 'Account' with the current document using its ID.
+  connect: ID
+}
+
+# 'Product' input values
+input ProductInput {
+  name: String
+  description: String
+  image: String
+  price: Int
+  tax: Int
+  status: ProductStatus!
+  account: ProductAccountRelation
+}
+
+enum ProductStatus {
+  PUBLISHED
+  DISABLED
+  NEW
+}
+
+type Query {
+  # Find a document from the collection of 'Account' by its id.
+  findAccountByID(
+    # The 'Account' document's ID
+    id: ID!
+  ): Account
+  # Find a document from the collection of 'Product' by its id.
+  findProductByID(
+    # The 'Product' document's ID
+    id: ID!
+  ): Product
+  findAccountByPhone(phone_number: String): Account
+}
+
+scalar Time
+
