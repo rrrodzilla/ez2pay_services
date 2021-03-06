@@ -6,7 +6,7 @@ use actix_web::http::header::CONTENT_TYPE;
 use actix_web::http::HeaderValue;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
-use ez2paylib::{get_account, notify_info};
+use ez2paylib::{create_product, get_account, notify_info};
 use serde::Deserialize;
 use std::env;
 #[derive(Deserialize)]
@@ -27,6 +27,7 @@ async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
 
     if form.media_url0.len() > 0 {
         info!("Image: {}", &form.media_url0);
+        create_product(&id, &form.media_url0).await;
         HttpResponse::Ok()
     } else {
         warn!("No image found");

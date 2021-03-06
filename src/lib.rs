@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports)]
+#![allow(dead_code)]
 #[macro_use]
 extern crate log;
 extern crate dotenv;
@@ -7,9 +7,12 @@ mod queries;
 mod query_dsl;
 mod types;
 use crate::mutations::accounts::create::{CreateAccountByPhone, CreateAccountByPhoneArguments};
+use crate::mutations::products::create::{
+    CreateProductForAccount, CreateProductForAccountArguments,
+};
 use crate::queries::accounts::{FindAccountByPhone, FindAccountByPhoneArguments};
 use std::env;
-use twilio::{Client, OutboundMessage};
+use twilio::OutboundMessage;
 
 pub async fn notify_info(phone_number: &str) {
     //using test values if real values aren't set
@@ -26,7 +29,44 @@ pub async fn notify_info(phone_number: &str) {
         Err(_) => error!("Couldn't send info message")
     };
 }
+pub async fn create_product(id: &str, image: &str) {
+    use cynic::http::SurfExt;
+    use cynic::MutationBuilder;
 
+    let db_secret_key: &str =
+        &env::var("DB_AUTH_SECRET").unwrap_or_else(|_| panic!("DB_AUTH_SECRET must be set!"));
+    let graphql_endpoint: &str = &env::var("GRAPHQL_ENDPOINT")
+        .unwrap_or_else(|_| "https://graphql.fauna.com/graphql".into());
+    let operation = CreateProductForAccount::build(&CreateProductForAccountArguments {
+        connect: cynic::Id::from(id),
+        image: image.to_string(),
+    });
+    let response = surf::post(graphql_endpoint)
+        .header("authorization", format!("Basic {}", db_secret_key))
+        .header("Accept-Encoding", "gzip, deflate, br")
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .header("Connection", "keep-alive")
+        .header("DNT", "1")
+        .run_graphql(operation)
+        .await
+        .unwrap()
+        .data;
+    match response {
+        Some(a) => {
+            let existing_id = a.create_product.id.clone().into_inner();
+            info!(
+                "Created new product for account:{} - {:?}",
+                id,
+                existing_id.clone()
+            );
+            // here we generate a has for the id and send the management url to the user
+        }
+        None => {
+            error!("Product couldn't be created for some reason...");
+        }
+    }
+}
 //we'll want this to return an account id no matter what
 //return an existing account or create one from the incoming phone number if it's not found and
 //return the new id

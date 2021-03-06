@@ -7,7 +7,54 @@ pub mod products {
         schema_path = r#"src/graphql/schema.graphql"#,
         query_module = "query_dsl"
     )]
-    pub mod create {}
+    pub mod create {
+
+        use crate::query_dsl::*;
+
+        #[derive(cynic::FragmentArguments, Debug)]
+        pub struct CreateProductForAccountArguments {
+            pub connect: cynic::Id,
+            pub image: String,
+        }
+
+        #[derive(cynic::QueryFragment, Debug)]
+        #[cynic(
+            graphql_type = "Mutation",
+            argument_struct = "CreateProductForAccountArguments"
+        )]
+        pub struct CreateProductForAccount {
+            #[arguments(data = ProductInput { account: Some(ProductAccountRelation { connect: Some(args.connect.clone()) }), image: Some(args.image.clone()), status: ProductStatus::New })]
+            pub create_product: Product,
+        }
+
+        #[derive(cynic::QueryFragment, Debug)]
+        #[cynic(graphql_type = "Product")]
+        pub struct Product {
+            pub id: cynic::Id,
+        }
+
+        #[derive(cynic::Enum, Clone, Copy, Debug)]
+        #[cynic(graphql_type = "ProductStatus")]
+        pub enum ProductStatus {
+            Published,
+            Disabled,
+            New,
+        }
+
+        #[derive(cynic::InputObject, Debug)]
+        #[cynic(graphql_type = "ProductInput")]
+        pub struct ProductInput {
+            pub account: Option<ProductAccountRelation>,
+            pub image: Option<String>,
+            pub status: ProductStatus,
+        }
+
+        #[derive(cynic::InputObject, Debug)]
+        #[cynic(graphql_type = "ProductAccountRelation")]
+        pub struct ProductAccountRelation {
+            pub connect: Option<cynic::Id>,
+        }
+    }
 }
 #[cynic::query_module(
     schema_path = r#"src/graphql/schema.graphql"#,
@@ -19,7 +66,7 @@ pub mod accounts {
         query_module = "query_dsl"
     )]
     pub mod create {
-        use crate::{query_dsl::*, types::*};
+        use crate::query_dsl::*;
 
         #[derive(cynic::FragmentArguments, Debug)]
         pub struct CreateAccountByPhoneArguments {
@@ -55,7 +102,7 @@ pub mod accounts {
     )]
     pub mod update {
 
-        use crate::{query_dsl::*, types::*};
+        use crate::query_dsl::*;
 
         #[derive(cynic::FragmentArguments, Debug)]
         pub struct UpdateAccountByPhoneArguments {

@@ -4,7 +4,7 @@
 )]
 pub mod accounts {
 
-    use crate::{query_dsl::*, types::*};
+    use crate::query_dsl::*;
 
     #[derive(cynic::FragmentArguments, Debug)]
     pub struct FindAccountByPhoneArguments {
@@ -48,7 +48,7 @@ pub mod accounts {
 pub mod products {
 
     use crate::queries::accounts::*;
-    use crate::{query_dsl::*, types::*};
+    use crate::query_dsl::*;
 
     #[derive(cynic::FragmentArguments, Debug)]
     pub struct FindProductByIdArguments {
