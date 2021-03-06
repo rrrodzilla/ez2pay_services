@@ -11,6 +11,8 @@ use crate::mutations::products::create::{
     CreateProductForAccount, CreateProductForAccountArguments,
 };
 use crate::queries::accounts::{FindAccountByPhone, FindAccountByPhoneArguments};
+use crate::queries::products::{FindProductById, FindProductByIdArguments};
+use harsh::Harsh;
 use std::env;
 use twilio::OutboundMessage;
 
@@ -24,7 +26,7 @@ pub async fn notify_info(phone_number: &str) {
     let service_phone_number: &str =
         &env::var("EZPAY_PHONE_NUMBER").unwrap_or_else(|_| "+15005550006".into());
     let client = twilio::Client::new(sid, secret);
-    match client.send_message(OutboundMessage::new(service_phone_number,phone_number , "To sell a product, text a picture of what you're selling.  Learn more at: https://ez2pay.me")).await {
+    match client.send_message(OutboundMessage::new(service_phone_number,phone_number , "To sell a product, text a picture of what you're selling.  Learn more at: https://easy2pay.me")).await {
         Ok(_) => info!("Sent info message to {}", phone_number),
         Err(_) => error!("Couldn't send info message")
     };
@@ -54,16 +56,52 @@ pub async fn create_product(id: &str, image: &str) {
         .data;
     match response {
         Some(a) => {
-            let existing_id = a.create_product.id.clone().into_inner();
+            let new_product_id = a.create_product.id.clone().into_inner();
+            let harsh = Harsh::builder().salt("ez2pay").length(6).build().unwrap();
+            let short_url = harsh.encode_hex(&new_product_id).unwrap();
             info!(
-                "Created new product for account:{} - {:?}",
-                id,
-                existing_id.clone()
+                "Activate your product at https://ez2pay.me/{}\nKeep this url safe and don't share it with anybody!",
+                short_url
             );
+
             // here we generate a has for the id and send the management url to the user
         }
         None => {
             error!("Product couldn't be created for some reason...");
+        }
+    }
+}
+pub async fn get_product(product_id: &str) -> String {
+    use cynic::http::SurfExt;
+    use cynic::QueryBuilder;
+
+    let db_secret_key: &str =
+        &env::var("DB_AUTH_SECRET").unwrap_or_else(|_| panic!("DB_AUTH_SECRET must be set!"));
+    let graphql_endpoint: &str = &env::var("GRAPHQL_ENDPOINT")
+        .unwrap_or_else(|_| "https://graphql.fauna.com/graphql".into());
+    let operation = FindProductById::build(&FindProductByIdArguments {
+        id: cynic::Id::from(product_id),
+    });
+    let response = surf::post(graphql_endpoint)
+        .header("authorization", format!("Basic {}", db_secret_key))
+        .header("Accept-Encoding", "gzip, deflate, br")
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .header("Connection", "keep-alive")
+        .header("DNT", "1")
+        .run_graphql(operation)
+        .await
+        .unwrap()
+        .data;
+
+    match response {
+        Some(a) => {
+            let prod = a.find_product_by_id.unwrap();
+            serde_json::to_string(&prod).unwrap()
+        }
+        None => {
+            warn!("No product was found for id: {}", product_id);
+            "{}".to_string()
         }
     }
 }
@@ -81,7 +119,6 @@ pub async fn get_account(phone_number: &str) -> String {
     let operation = FindAccountByPhone::build(&FindAccountByPhoneArguments {
         phone_number: phone_number.to_string(),
     });
-    //Zm5BRURXRTdoQ0FDQWtRS1cyLXItLTU5MlBnc1hqTDRkTkNfdTJ6VzplenBheTpzZXJ2ZXI=
     let response = surf::post(graphql_endpoint)
         .header("authorization", format!("Basic {}", db_secret_key))
         .header("Accept-Encoding", "gzip, deflate, br")

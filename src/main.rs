@@ -1,14 +1,13 @@
 #[macro_use]
 extern crate log;
 extern crate dotenv;
-use actix_web::dev::Service;
-use actix_web::http::header::CONTENT_TYPE;
-use actix_web::http::HeaderValue;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
-use ez2paylib::{create_product, get_account, notify_info};
+use ez2paylib::{create_product, get_account, get_product, notify_info};
+use harsh::Harsh;
 use serde::Deserialize;
 use std::env;
+
 #[derive(Deserialize)]
 struct ImageMessage {
     #[serde(rename = "From")]
@@ -19,6 +18,22 @@ struct ImageMessage {
     to: String,
 }
 
+async fn manage_product(web::Path(id): web::Path<String>) -> HttpResponse {
+    let harsh = Harsh::builder().salt("ez2pay").length(6).build().unwrap();
+    let prod_id = harsh.decode_hex(&id).unwrap_or_default();
+    if prod_id.len() > 0 {
+        let prod = get_product(&prod_id).await;
+        HttpResponse::Ok()
+            .content_type("application/json")
+            .body(prod)
+    } else {
+        warn!("Received bad product id: {}", &id);
+        HttpResponse::Ok()
+            .content_type("application/json")
+            .body("{}".to_string())
+    }
+}
+
 async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
     info!("");
     info!("From: {}", form.from);
@@ -26,7 +41,7 @@ async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
     let id = get_account(&form.from).await;
 
     if form.media_url0.len() > 0 {
-        info!("Image: {}", &form.media_url0);
+        info!("Image found...");
         create_product(&id, &form.media_url0).await;
         HttpResponse::Ok()
     } else {
@@ -64,31 +79,8 @@ async fn main() -> std::io::Result<()> {
     info!("{}", address);
     HttpServer::new(|| {
         App::new()
-            .wrap_fn(|req, srv| {
-                //                info!("Hi from one. You requested: {}", req.path());
-                let fut = srv.call(req);
-                async {
-                    let mut res = fut.await?;
-                    res.headers_mut()
-                        .insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
-
-                    //                   info!("Updated response one");
-                    Ok(res)
-                }
-            })
-            .wrap_fn(|req, srv| {
-                //             info!("Hi from two. You passed: {:#?}", req);
-                let fut = srv.call(req);
-                async {
-                    let mut res = fut.await?;
-                    res.headers_mut()
-                        .insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
-
-                    //                  info!("Updated response two");
-                    Ok(res)
-                }
-            })
             .route("/input", web::post().to(ingest_image))
+            .route("/{id}", web::get().to(manage_product))
     })
     .bind(address.clone())?
     .run()
