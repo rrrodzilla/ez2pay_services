@@ -69,9 +69,9 @@ pub mod products {
     pub struct Product {
         pub account: Account,
         pub description: Option<String>,
-        pub image: Option<String>,
+        pub image: String,
         pub name: Option<String>,
-        pub price: Option<i32>,
+        pub price: i32,
         pub status: ProductStatus,
         pub tax: Option<i32>,
     }

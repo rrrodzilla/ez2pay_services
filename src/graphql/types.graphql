@@ -6,8 +6,8 @@ type Account {
 type Product {
   name: String,
   description: String,
-  image: String,
-  price: Int,
+  image: String!,
+  price: Int!,
   tax: Int,
   status: ProductStatus!
   account: Account!

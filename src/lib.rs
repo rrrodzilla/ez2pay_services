@@ -14,7 +14,6 @@ use crate::queries::accounts::{FindAccountByPhone, FindAccountByPhoneArguments};
 use crate::queries::products::{FindProductById, FindProductByIdArguments};
 use harsh::Harsh;
 use otpauth::TOTP;
-use rusty_money::{iso, Money};
 use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 use twilio::OutboundMessage;
@@ -29,6 +28,7 @@ pub async fn verify_auth_code(code: u32) -> bool {
         .as_secs();
     auth.verify(code, 900, timestamp)
 }
+
 pub async fn notify_auth_code(phone_number: &str) {
     let auth_secret: &str =
         &env::var("AUTH_SECRET").unwrap_or_else(|_| panic!("AUTH_SECRET must be set!"));
@@ -73,7 +73,7 @@ pub async fn notify_info(phone_number: &str, message: &str) {
         Err(_) => error!("Couldn't send info message"),
     };
 }
-pub async fn create_product(id: &str, image: &str, price: i64) {
+pub async fn create_product(id: &str, image: &str, price: i32) {
     use cynic::http::SurfExt;
     use cynic::MutationBuilder;
 
@@ -84,6 +84,7 @@ pub async fn create_product(id: &str, image: &str, price: i64) {
     let operation = CreateProductForAccount::build(&CreateProductForAccountArguments {
         connect: cynic::Id::from(id),
         image: image.to_string(),
+        price: price,
     });
     let response = surf::post(graphql_endpoint)
         .header("authorization", format!("Basic {}", db_secret_key))

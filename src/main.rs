@@ -17,7 +17,7 @@ struct ImageMessage {
     #[serde(rename = "From")]
     from: String,
     #[serde(default, rename = "Body")]
-    body: i64,
+    body: String,
     #[serde(default, rename = "MediaUrl0")]
     media_url0: String,
     #[serde(rename = "To")]
@@ -56,7 +56,19 @@ async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
     info!("From: {}", form.from);
     info!("To: {}", form.to);
     let id = get_account(&form.from).await;
-    let price = form.body;
+    //probably not the greatest way to eliminate these characters
+    //i should probs use regex and come up with some other cases
+    //TODO: test thoroughly
+    let price: i32 = match form
+        .body
+        .replace(",", "")
+        .replace(".", "")
+        .replace("$", "")
+        .parse::<i32>()
+    {
+        Ok(i) => i,
+        _ => 0,
+    };
     if price > 0 {
         info!("Price: {}", price);
     }

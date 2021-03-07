@@ -10,11 +10,11 @@ pub mod products {
     pub mod create {
 
         use crate::query_dsl::*;
-
         #[derive(cynic::FragmentArguments, Debug)]
         pub struct CreateProductForAccountArguments {
             pub connect: cynic::Id,
             pub image: String,
+            pub price: i32,
         }
 
         #[derive(cynic::QueryFragment, Debug)]
@@ -23,7 +23,7 @@ pub mod products {
             argument_struct = "CreateProductForAccountArguments"
         )]
         pub struct CreateProductForAccount {
-            #[arguments(data = ProductInput { account: Some(ProductAccountRelation { connect: Some(args.connect.clone()) }), image: Some(args.image.clone()), status: ProductStatus::New })]
+            #[arguments(data = ProductInput { account: Some(ProductAccountRelation { connect: Some(args.connect.clone()) }), image: args.image.clone(), price: args.price, status: ProductStatus::New })]
             pub create_product: Product,
         }
 
@@ -45,7 +45,8 @@ pub mod products {
         #[cynic(graphql_type = "ProductInput")]
         pub struct ProductInput {
             pub account: Option<ProductAccountRelation>,
-            pub image: Option<String>,
+            pub image: String,
+            pub price: i32,
             pub status: ProductStatus,
         }
 
