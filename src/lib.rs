@@ -73,7 +73,7 @@ pub async fn notify_info(phone_number: &str, message: &str) {
         Err(_) => error!("Couldn't send info message"),
     };
 }
-pub async fn create_product(id: &str, image: &str, price: i32) {
+pub async fn create_product(id: &str, image: &str, price: i32) -> Result<String, &'static str> {
     use cynic::http::SurfExt;
     use cynic::MutationBuilder;
 
@@ -102,15 +102,13 @@ pub async fn create_product(id: &str, image: &str, price: i32) {
             let new_product_id = a.create_product.id.clone().into_inner();
             let harsh = Harsh::builder().salt("ez2pay").length(6).build().unwrap();
             let short_url = harsh.encode_hex(&new_product_id).unwrap();
-            info!(
-                "Activate your product at https://ez2pay.me/{}\nKeep this url safe and don't share it with anybody!",
-                short_url
-            );
+            Ok(short_url)
 
             // here we generate a has for the id and send the management url to the user
         }
         None => {
             error!("Product couldn't be created for some reason...");
+            Err("Product couldn't be created for some reason...")
         }
     }
 }
@@ -151,7 +149,7 @@ pub async fn get_product(product_id: &str) -> String {
 //we'll want this to return an account id no matter what
 //return an existing account or create one from the incoming phone number if it's not found and
 //return the new id
-pub async fn get_account(phone_number: &str) -> String {
+pub async fn get_account(phone_number: &str) -> (String, bool) {
     use cynic::http::SurfExt;
     use cynic::QueryBuilder;
 
@@ -181,7 +179,7 @@ pub async fn get_account(phone_number: &str) -> String {
             let account = a.clone();
             let existing_id = account.id.clone().inner().to_string();
             info!("Retrieved Existing Account: {:?}", existing_id);
-            existing_id
+            (existing_id, false)
         }
         None => {
             //if no account was found, we need to create one
@@ -204,7 +202,7 @@ pub async fn get_account(phone_number: &str) -> String {
                 .create_account;
             let new_id = response.id.inner().to_string();
             info!("Created New Account: {:?}", new_id);
-            new_id
+            (new_id, true)
         }
     }
 }

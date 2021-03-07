@@ -55,7 +55,7 @@ async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
     info!("");
     info!("From: {}", form.from);
     info!("To: {}", form.to);
-    let id = get_account(&form.from).await;
+    let (id, is_new_account) = get_account(&form.from).await;
     //probably not the greatest way to eliminate these characters
     //i should probs use regex and come up with some other cases
     //TODO: test thoroughly
@@ -75,11 +75,17 @@ async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
 
     if form.media_url0.len() > 0 {
         info!("Image found...");
-        create_product(&id, &form.media_url0, price).await;
+        let short_url = create_product(&id, &form.media_url0, price).await.unwrap();
+        if is_new_account {
+            notify_info(&form.from, &format!("Welcome!\nActivate your new product @ https://ez2pay.me/{}\nKeep this URL safe and don't share it!\nLearn more @ https://easy2pay.me",short_url)).await;
+        //        info!("Activate your product at https://ez2pay.me/{}\nKeep this url safe and don't share it with anybody!",short_url);
+        } else {
+            notify_info(&form.from, &format!("Activate your new product @ https://ez2pay.me/{}\nKeep this URL safe and don't share it!\nLearn more @ https://easy2pay.me",short_url)).await;
+        }
         HttpResponse::Ok()
     } else {
         warn!("No image found");
-        notify_info(&form.from,  "To sell a product, text a picture of what you're selling.  Learn more at: https://easy2pay.me").await;
+        notify_info(&form.from,  "Text a picture and price of what you want to sell.\nYou'll get a checkout page to share with your customers.\nSimple!\nLearn more @ https://easy2pay.me").await;
         HttpResponse::Ok()
     }
 }
