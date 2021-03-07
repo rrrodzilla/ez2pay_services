@@ -1,9 +1,13 @@
 #[macro_use]
 extern crate log;
 extern crate dotenv;
+extern crate otpauth;
+
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
-use ez2paylib::{create_product, get_account, get_product, notify_info};
+use ez2paylib::{
+    create_product, get_account, get_product, notify_auth_code, notify_info, verify_auth_code,
+};
 use harsh::Harsh;
 use serde::Deserialize;
 use std::env;
@@ -12,12 +16,25 @@ use std::env;
 struct ImageMessage {
     #[serde(rename = "From")]
     from: String,
+    #[serde(default, rename = "Body")]
+    body: i64,
     #[serde(default, rename = "MediaUrl0")]
     media_url0: String,
     #[serde(rename = "To")]
     to: String,
 }
+async fn auth_me(web::Path(code): web::Path<u32>) -> impl Responder {
+    if verify_auth_code(code).await {
+        HttpResponse::Ok()
+    } else {
+        HttpResponse::Unauthorized()
+    }
+}
+async fn knock_knock(web::Path(id): web::Path<String>) -> impl Responder {
+    notify_auth_code(&id).await;
 
+    HttpResponse::Ok()
+}
 async fn manage_product(web::Path(id): web::Path<String>) -> HttpResponse {
     let harsh = Harsh::builder().salt("ez2pay").length(6).build().unwrap();
     let prod_id = harsh.decode_hex(&id).unwrap_or_default();
@@ -39,14 +56,18 @@ async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
     info!("From: {}", form.from);
     info!("To: {}", form.to);
     let id = get_account(&form.from).await;
+    let price = form.body;
+    if price > 0 {
+        info!("Price: {}", price);
+    }
 
     if form.media_url0.len() > 0 {
         info!("Image found...");
-        create_product(&id, &form.media_url0).await;
+        create_product(&id, &form.media_url0, price).await;
         HttpResponse::Ok()
     } else {
         warn!("No image found");
-        notify_info(&form.from).await;
+        notify_info(&form.from,  "To sell a product, text a picture of what you're selling.  Learn more at: https://easy2pay.me").await;
         HttpResponse::Ok()
     }
 }
@@ -81,6 +102,8 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .route("/input", web::post().to(ingest_image))
             .route("/{id}", web::get().to(manage_product))
+            .route("/letmein/{id}", web::get().to(knock_knock))
+            .route("/verifyme/{code}", web::get().to(auth_me))
     })
     .bind(address.clone())?
     .run()

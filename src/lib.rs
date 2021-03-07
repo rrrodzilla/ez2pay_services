@@ -13,10 +13,42 @@ use crate::mutations::products::create::{
 use crate::queries::accounts::{FindAccountByPhone, FindAccountByPhoneArguments};
 use crate::queries::products::{FindProductById, FindProductByIdArguments};
 use harsh::Harsh;
+use otpauth::TOTP;
+use rusty_money::{iso, Money};
 use std::env;
+use std::time::{SystemTime, UNIX_EPOCH};
 use twilio::OutboundMessage;
 
-pub async fn notify_info(phone_number: &str) {
+pub async fn verify_auth_code(code: u32) -> bool {
+    let auth_secret: &str =
+        &env::var("AUTH_SECRET").unwrap_or_else(|_| panic!("AUTH_SECRET must be set!"));
+    let auth = TOTP::new(auth_secret);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    auth.verify(code, 900, timestamp)
+}
+pub async fn notify_auth_code(phone_number: &str) {
+    let auth_secret: &str =
+        &env::var("AUTH_SECRET").unwrap_or_else(|_| panic!("AUTH_SECRET must be set!"));
+    let auth = TOTP::new(auth_secret);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let code = auth.generate(900, timestamp);
+    notify_info(
+        phone_number,
+        &format!(
+            "EZ2PAY.ME: {} is your Product Page Verification Code. Valid for 15 minutes",
+            code
+        ),
+    )
+    .await;
+}
+
+pub async fn notify_info(phone_number: &str, message: &str) {
     //using test values if real values aren't set
     //these vars should all be moved to their own struct
     let sid: &str =
@@ -26,12 +58,22 @@ pub async fn notify_info(phone_number: &str) {
     let service_phone_number: &str =
         &env::var("EZPAY_PHONE_NUMBER").unwrap_or_else(|_| "+15005550006".into());
     let client = twilio::Client::new(sid, secret);
-    match client.send_message(OutboundMessage::new(service_phone_number,phone_number , "To sell a product, text a picture of what you're selling.  Learn more at: https://easy2pay.me")).await {
-        Ok(_) => info!("Sent info message to {}", phone_number),
-        Err(_) => error!("Couldn't send info message")
+    match client
+        .send_message(OutboundMessage::new(
+            service_phone_number,
+            phone_number,
+            message,
+        ))
+        .await
+    {
+        Ok(_) => info!(
+            "\n*****MESSAGE SENT*****\nSent to: {}\nMessage: {}",
+            phone_number, message
+        ),
+        Err(_) => error!("Couldn't send info message"),
     };
 }
-pub async fn create_product(id: &str, image: &str) {
+pub async fn create_product(id: &str, image: &str, price: i64) {
     use cynic::http::SurfExt;
     use cynic::MutationBuilder;
 
