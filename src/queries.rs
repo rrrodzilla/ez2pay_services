@@ -5,7 +5,7 @@
 pub mod accounts {
 
     use crate::query_dsl::*;
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
 
     #[derive(cynic::FragmentArguments, Debug)]
     pub struct FindAccountByPhoneArguments {
@@ -34,13 +34,16 @@ pub mod accounts {
         pub find_account_by_id: Option<Account>,
     }
 
-    #[derive(cynic::QueryFragment, Debug, Clone, Serialize)]
+    #[derive(cynic::QueryFragment, Debug, Clone, Serialize, Deserialize)]
     #[cynic(graphql_type = "Account")]
     pub struct Account {
-        #[serde(skip_serializing)]
+        #[serde(skip, default = "default_id")]
         pub id: cynic::Id,
         pub phone_number: Option<String>,
         pub stripe_id: Option<String>,
+    }
+    fn default_id() -> cynic::Id {
+        cynic::Id::from("")
     }
 }
 #[cynic::query_module(
@@ -50,7 +53,7 @@ pub mod accounts {
 pub mod products {
     use crate::queries::accounts::*;
     use crate::query_dsl::*;
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
 
     #[derive(cynic::FragmentArguments, Debug)]
     pub struct FindProductByIdArguments {
@@ -64,7 +67,7 @@ pub mod products {
         pub find_product_by_id: Option<Product>,
     }
 
-    #[derive(cynic::QueryFragment, Debug, Serialize)]
+    #[derive(cynic::QueryFragment, Debug, Deserialize, Serialize)]
     #[cynic(graphql_type = "Product")]
     pub struct Product {
         pub account: Account,
@@ -76,7 +79,7 @@ pub mod products {
         pub tax: Option<i32>,
     }
 
-    #[derive(cynic::Enum, Clone, Copy, Debug, Serialize)]
+    #[derive(cynic::Enum, Clone, Copy, Debug, Serialize, Deserialize)]
     #[cynic(graphql_type = "ProductStatus")]
     pub enum ProductStatus {
         Published,

@@ -2,11 +2,12 @@
 extern crate log;
 extern crate dotenv;
 extern crate otpauth;
-
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
+use ez2paylib::mutations::products::update::UpdateProductArguments;
 use ez2paylib::{
-    create_product, get_account, get_product, notify_auth_code, notify_info, verify_auth_code,
+    create_product, get_account, get_product, notify_auth_code, notify_info, update_product,
+    verify_auth_code,
 };
 use harsh::Harsh;
 use serde::Deserialize;
@@ -51,6 +52,19 @@ async fn manage_product(web::Path(id): web::Path<String>) -> HttpResponse {
     }
 }
 
+async fn handle_update_product(
+    web::Path(id): web::Path<String>,
+    mut product: web::Form<UpdateProductArguments>,
+) -> impl Responder {
+    product.id = cynic::Id::from(id);
+    match update_product(product.into_inner()).await {
+        Ok(_) => HttpResponse::Ok(),
+        Err(s) => {
+            error!("Couldn't update product: {}", s);
+            HttpResponse::BadRequest()
+        }
+    }
+}
 async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
     info!("");
     info!("From: {}", form.from);
@@ -120,6 +134,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .route("/input", web::post().to(ingest_image))
             .route("/{id}", web::get().to(manage_product))
+            .route("/update/{id}", web::put().to(handle_update_product))
             .route("/letmein/{id}", web::get().to(knock_knock))
             .route("/verifyme/{code}", web::get().to(auth_me))
     })

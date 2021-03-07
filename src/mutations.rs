@@ -7,6 +7,61 @@ pub mod products {
         schema_path = r#"src/graphql/schema.graphql"#,
         query_module = "query_dsl"
     )]
+    pub mod update {
+
+        use crate::query_dsl::*;
+        use serde::Deserialize;
+
+        #[derive(cynic::FragmentArguments, Debug, Deserialize)]
+        pub struct UpdateProductArguments {
+            pub description: String,
+            pub image: String,
+            pub name: String,
+            pub price: i32,
+            pub tax: i32,
+            #[serde(skip, default = "default_id")]
+            pub id: cynic::Id,
+        }
+        fn default_id() -> cynic::Id {
+            cynic::Id::from("")
+        }
+
+        #[derive(cynic::QueryFragment, Debug)]
+        #[cynic(graphql_type = "Mutation", argument_struct = "UpdateProductArguments")]
+        pub struct UpdateProduct {
+            #[arguments(data = ProductInput { description: Some(args.description.clone()), image: args.image.clone(), name: Some(args.name.clone()), price: args.price, status: ProductStatus::Disabled, tax: Some(args.tax) }, id = args.id.clone())]
+            pub update_product: Option<Product>,
+        }
+
+        #[derive(cynic::QueryFragment, Debug)]
+        #[cynic(graphql_type = "Product")]
+        pub struct Product {
+            pub id: cynic::Id,
+        }
+
+        #[derive(cynic::Enum, Clone, Copy, Debug)]
+        #[cynic(graphql_type = "ProductStatus")]
+        pub enum ProductStatus {
+            Published,
+            Disabled,
+            New,
+        }
+
+        #[derive(cynic::InputObject, Debug)]
+        #[cynic(graphql_type = "ProductInput")]
+        pub struct ProductInput {
+            pub description: Option<String>,
+            pub image: String,
+            pub name: Option<String>,
+            pub price: i32,
+            pub status: ProductStatus,
+            pub tax: Option<i32>,
+        }
+    }
+    #[cynic::query_module(
+        schema_path = r#"src/graphql/schema.graphql"#,
+        query_module = "query_dsl"
+    )]
     pub mod create {
 
         use crate::query_dsl::*;

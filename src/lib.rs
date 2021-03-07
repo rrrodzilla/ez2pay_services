@@ -2,14 +2,15 @@
 #[macro_use]
 extern crate log;
 extern crate dotenv;
-mod mutations;
-mod queries;
-mod query_dsl;
-mod types;
+pub mod mutations;
+pub mod queries;
+pub mod query_dsl;
+pub mod types;
 use crate::mutations::accounts::create::{CreateAccountByPhone, CreateAccountByPhoneArguments};
 use crate::mutations::products::create::{
     CreateProductForAccount, CreateProductForAccountArguments,
 };
+use crate::mutations::products::update::{UpdateProduct, UpdateProductArguments};
 use crate::queries::accounts::{FindAccountByPhone, FindAccountByPhoneArguments};
 use crate::queries::products::{FindProductById, FindProductByIdArguments};
 use harsh::Harsh;
@@ -72,6 +73,38 @@ pub async fn notify_info(phone_number: &str, message: &str) {
         ),
         Err(_) => error!("Couldn't send info message"),
     };
+}
+pub async fn update_product(product: UpdateProductArguments) -> Result<(), &'static str> {
+    use cynic::http::SurfExt;
+    use cynic::MutationBuilder;
+
+    let db_secret_key: &str =
+        &env::var("DB_AUTH_SECRET").unwrap_or_else(|_| panic!("DB_AUTH_SECRET must be set!"));
+    let graphql_endpoint: &str = &env::var("GRAPHQL_ENDPOINT")
+        .unwrap_or_else(|_| "https://graphql.fauna.com/graphql".into());
+    let operation = UpdateProduct::build(&product);
+    let response = surf::post(graphql_endpoint)
+        .header("authorization", format!("Basic {}", db_secret_key))
+        .header("Accept-Encoding", "gzip, deflate, br")
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .header("Connection", "keep-alive")
+        .header("DNT", "1")
+        .run_graphql(operation)
+        .await
+        .unwrap()
+        .data;
+    match response {
+        Some(_) => {
+            Ok(())
+
+            // here we generate a has for the id and send the management url to the user
+        }
+        None => {
+            error!("Product couldn't be updated for some reason...");
+            Err("Product couldn't be created for some reason...")
+        }
+    }
 }
 pub async fn create_product(id: &str, image: &str, price: i32) -> Result<String, &'static str> {
     use cynic::http::SurfExt;
