@@ -60,7 +60,7 @@ pub mod products {
         pub id: cynic::Id,
     }
 
-    #[derive(cynic::QueryFragment, Debug)]
+    #[derive(cynic::QueryFragment, Debug, Serialize)]
     #[cynic(graphql_type = "Query", argument_struct = "FindProductByIdArguments")]
     pub struct FindProductById {
         #[arguments(id = args.id.clone())]

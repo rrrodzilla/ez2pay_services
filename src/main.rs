@@ -2,6 +2,7 @@
 extern crate log;
 extern crate dotenv;
 extern crate otpauth;
+use actix_cors::Cors;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use dotenv::dotenv;
 use ez2paylib::mutations::products::update::UpdateProductArguments;
@@ -9,9 +10,16 @@ use ez2paylib::{
     create_product, get_account, get_product, notify_auth_code, notify_info, update_product,
     verify_auth_code,
 };
+use futures::future;
 use harsh::Harsh;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
+use stripe::{
+    CheckoutSessionMode, CreateCheckoutSession, CreateCheckoutSessionLineItems,
+    CreateCheckoutSessionLineItemsPriceData, CreateCheckoutSessionLineItemsPriceDataProductData,
+    CreateCheckoutSessionPaymentMethodTypes, Currency,
+};
 
 #[derive(Deserialize)]
 struct ImageMessage {
@@ -36,14 +44,106 @@ async fn knock_knock(web::Path(id): web::Path<String>) -> impl Responder {
 
     HttpResponse::Ok()
 }
+async fn stage_checkout(web::Path(id): web::Path<String>) -> impl Responder {
+    let harsh = Harsh::builder()
+        .salt("ez2pay_customer")
+        .length(6)
+        .build()
+        .unwrap();
+    let prod_id = harsh.decode_hex(&id).unwrap_or_default();
+    if prod_id.len() > 0 {
+        let prod = get_product(&prod_id).await.find_product_by_id.unwrap();
+
+        let stripe_secret: &str =
+            &env::var("STRIPE_STAGING").unwrap_or_else(|_| panic!("STRIPE_STAGING must be set!!!"));
+        let mut checkout_session_params = CreateCheckoutSession::new(
+            "https://localhost",
+            vec![CreateCheckoutSessionPaymentMethodTypes::Card],
+            "https://localhost/success",
+        );
+
+        //first let's fix the product url
+        //having to make a extra http request to get the image isn't amazing
+        //but it's required to get to the actual image to submit to stripe for the checkout page
+        //the alternative is to set up a service that will copy the image from twilio to another
+        //cdn for direct access.  this is a todo for the future since twilio only keeps media for
+        //a year, but for now, nopes
+
+        trace!("about to attempt to retrieve image from {}", prod.image);
+        let img_response = surf::get(prod.image).await.unwrap();
+        let img = img_response.header("location").unwrap().get(0).unwrap();
+
+        //set up some price data for this checkout session using the product image we retrieved
+        let price_data = CreateCheckoutSessionLineItemsPriceData {
+            currency: Currency::USD,
+            unit_amount: Some(prod.price.into()),
+            product_data: Some(CreateCheckoutSessionLineItemsPriceDataProductData {
+                description: Some(
+                    prod.description
+                        .unwrap_or_else(|| "Thanks for your support!".to_string()),
+                ),
+                images: Some(vec![img.to_string()]),
+                name: prod.name.unwrap_or_else(|| "Buy me!".to_string()),
+                metadata: HashMap::new(),
+            }),
+            unit_amount_decimal: Option::None,
+            recurring: Option::None,
+            product: Option::None,
+        };
+
+        /*
+        let adjustable_quantity = CreateCheckoutSessionLineItemsAdjustableQuantity {
+            enabled: true,
+            maximum: Some(99),
+            minimum: Some(1),
+        };
+        */
+
+        let line_item = CreateCheckoutSessionLineItems {
+            price_data: Some(price_data),
+            quantity: Some(1),
+            amount: Option::None,
+            currency: Option::None,
+            //adjustable_quantity: Some(adjustable_quantity),
+            adjustable_quantity: Option::None,
+            dynamic_tax_rates: Option::None,
+            price: Option::None,
+            tax_rates: Option::None,
+            description: Option::None,
+            name: Option::None,
+            images: Option::None,
+        };
+
+        checkout_session_params.line_items = Some(vec![line_item]);
+        checkout_session_params.mode = Some(CheckoutSessionMode::Payment);
+
+        let client = stripe::Client::new(stripe_secret);
+        let checkout_session = stripe::CheckoutSession::create(&client, checkout_session_params)
+            .await
+            .unwrap();
+        info!("{}", checkout_session.id);
+
+        HttpResponse::Ok().content_type("text/html").body(format!(
+            "<html><head><title>loading your product...</title><script src='https://js.stripe.com/v3/'></script><script type='text/javascript'>var stripe = Stripe('pk_test_wR7xgNYdB8FGgjBLmrDdiWyZ');document.onload = stripe.redirectToCheckout({{ sessionId:'{}' }});</script></head><body></body></html>", checkout_session.id),
+        )
+    } else {
+        warn!("Received bad product id: {}", &id);
+        HttpResponse::Ok()
+            .content_type("application/json")
+            .body("{}".to_string())
+    }
+}
+
 async fn manage_product(web::Path(id): web::Path<String>) -> HttpResponse {
     let harsh = Harsh::builder().salt("ez2pay").length(6).build().unwrap();
     let prod_id = harsh.decode_hex(&id).unwrap_or_default();
     if prod_id.len() > 0 {
+        //            serde_json::to_string(&prod).unwrap()
         let prod = get_product(&prod_id).await;
+        let res = serde_json::to_string(&prod).unwrap();
         HttpResponse::Ok()
             .content_type("application/json")
-            .body(prod)
+            .body(res)
     } else {
         warn!("Received bad product id: {}", &id);
         HttpResponse::Ok()
@@ -69,7 +169,11 @@ async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
     info!("");
     info!("From: {}", form.from);
     info!("To: {}", form.to);
-    let (id, is_new_account) = get_account(&form.from).await;
+    let customer_host: &str =
+        &env::var("CUSTOMER_HOST").unwrap_or_else(|_| panic!("CUSTOMER_HOST NOT SET"));
+    let mgmt_host: &str = &env::var("MGMT_HOST").unwrap_or_else(|_| panic!("MGMT_HOST NOT SET"));
+
+    let (id, _) = get_account(&form.from).await;
     //probably not the greatest way to eliminate these characters
     //i should probs use regex and come up with some other cases
     //TODO: test thoroughly
@@ -89,17 +193,12 @@ async fn ingest_image(form: web::Form<ImageMessage>) -> impl Responder {
 
     if form.media_url0.len() > 0 {
         info!("Image found...");
-        let short_url = create_product(&id, &form.media_url0, price).await.unwrap();
-        if is_new_account {
-            notify_info(&form.from, &format!("Welcome!\nActivate your new product @ https://ez2pay.me/{}\nKeep this URL safe and don't share it!\nLearn more @ https://easy2pay.me",short_url)).await;
-        //        info!("Activate your product at https://ez2pay.me/{}\nKeep this url safe and don't share it with anybody!",short_url);
-        } else {
-            notify_info(&form.from, &format!("Activate your new product @ https://ez2pay.me/{}\nKeep this URL safe and don't share it!\nLearn more @ https://easy2pay.me",short_url)).await;
-        }
+        let (cust_url, short_url) = create_product(&id, &form.media_url0, price).await.unwrap();
+        notify_info(&form.from, &format!("Visit your checkout page @ {}/{}\nManage your product @ {}/{}\nKeep this URL safe and don't share it!",customer_host, cust_url, mgmt_host, short_url)).await;
         HttpResponse::Ok()
     } else {
         warn!("No image found");
-        notify_info(&form.from,  "Text a picture and price of what you want to sell.\nYou'll get a checkout page to share with your customers.\nSimple!\nLearn more @ https://easy2pay.me").await;
+        notify_info(&form.from,  &format!("Text a picture and price of what you want to sell.\nYou'll get a checkout page to share with your customers.\nSimple!\nLearn more @ {}", mgmt_host)).await;
         HttpResponse::Ok()
     }
 }
@@ -124,14 +223,22 @@ async fn main() -> std::io::Result<()> {
     let addr: &str = &env::var("ADDRESS").unwrap_or_else(|_| "127.0.0.1".into());
     let port: &str = &env::var("PORT").unwrap_or_else(|_| "8080".into());
     let address = format!("{}:{}", addr, port);
+    let addr2: &str = &env::var("ADDRESS2").unwrap_or_else(|_| "127.0.0.1".into());
+    let port2: &str = &env::var("PORT2").unwrap_or_else(|_| "8181".into());
+    let address2 = format!("{}:{}", addr2, port2);
 
     //begin logging
     env_logger::init();
     //    let a = Account::get("+12063832022".into());
-    info!("Server started and listening...");
+    info!("Servers started and listening...");
     info!("{}", address);
-    HttpServer::new(|| {
+    info!("{}", address2);
+    let api_server = HttpServer::new(|| {
+        let cors = Cors::default()
+            .allowed_origin("https://ez2payu.com")
+            .allowed_methods(vec!["GET", "POST"]);
         App::new()
+            .wrap(cors)
             .route("/input", web::post().to(ingest_image))
             .route("/{id}", web::get().to(manage_product))
             .route("/update/{id}", web::put().to(handle_update_product))
@@ -139,6 +246,11 @@ async fn main() -> std::io::Result<()> {
             .route("/verifyme/{code}", web::get().to(auth_me))
     })
     .bind(address.clone())?
-    .run()
-    .await
+    .run();
+    let customer_server =
+        HttpServer::new(|| App::new().route("/{id}", web::get().to(stage_checkout)))
+            .bind(address2.clone())?
+            .run();
+    future::try_join(api_server, customer_server).await?;
+    Ok(())
 }

@@ -106,10 +106,18 @@ pub async fn update_product(product: UpdateProductArguments) -> Result<(), &'sta
         }
     }
 }
-pub async fn create_product(id: &str, image: &str, price: i32) -> Result<String, &'static str> {
+pub async fn create_product(
+    id: &str,
+    image: &str,
+    price: i32,
+) -> Result<(String, String), &'static str> {
     use cynic::http::SurfExt;
     use cynic::MutationBuilder;
 
+    let mut default_price = 500;
+    if price > 0 {
+        default_price = price;
+    }
     let db_secret_key: &str =
         &env::var("DB_AUTH_SECRET").unwrap_or_else(|_| panic!("DB_AUTH_SECRET must be set!"));
     let graphql_endpoint: &str = &env::var("GRAPHQL_ENDPOINT")
@@ -117,7 +125,7 @@ pub async fn create_product(id: &str, image: &str, price: i32) -> Result<String,
     let operation = CreateProductForAccount::build(&CreateProductForAccountArguments {
         connect: cynic::Id::from(id),
         image: image.to_string(),
-        price: price,
+        price: default_price,
     });
     let response = surf::post(graphql_endpoint)
         .header("authorization", format!("Basic {}", db_secret_key))
@@ -135,7 +143,13 @@ pub async fn create_product(id: &str, image: &str, price: i32) -> Result<String,
             let new_product_id = a.create_product.id.clone().into_inner();
             let harsh = Harsh::builder().salt("ez2pay").length(6).build().unwrap();
             let short_url = harsh.encode_hex(&new_product_id).unwrap();
-            Ok(short_url)
+            let cust_harsh = Harsh::builder()
+                .salt("ez2pay_customer")
+                .length(6)
+                .build()
+                .unwrap();
+            let cust_url = cust_harsh.encode_hex(&new_product_id).unwrap();
+            Ok((cust_url, short_url))
 
             // here we generate a has for the id and send the management url to the user
         }
@@ -145,7 +159,7 @@ pub async fn create_product(id: &str, image: &str, price: i32) -> Result<String,
         }
     }
 }
-pub async fn get_product(product_id: &str) -> String {
+pub async fn get_product(product_id: &str) -> FindProductById {
     use cynic::http::SurfExt;
     use cynic::QueryBuilder;
 
@@ -167,17 +181,19 @@ pub async fn get_product(product_id: &str) -> String {
         .await
         .unwrap()
         .data;
-
+    response.unwrap()
+    /*
     match response {
         Some(a) => {
-            let prod = a.find_product_by_id.unwrap();
-            serde_json::to_string(&prod).unwrap()
+            a.find_product_by_id.unwrap();
+            //            serde_json::to_string(&prod).unwrap()
         }
         None => {
             warn!("No product was found for id: {}", product_id);
             "{}".to_string()
         }
     }
+    */
 }
 //we'll want this to return an account id no matter what
 //return an existing account or create one from the incoming phone number if it's not found and

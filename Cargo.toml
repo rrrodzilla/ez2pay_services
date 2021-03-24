@@ -15,7 +15,7 @@ path="src/main.rs"
 
 [dependencies]
 actix-web = "3"
-serde = "1.0.123"
+serde = "1.0.124"
 serde_json = "1"
 clap = "3.0.0-beta.2"
 log = "0.4.0"
@@ -30,3 +30,5 @@ harsh = "0.2.1"
 futures = "0.3"
 otpauth = "0.3"
 rusty-money = "0.4.1"
+async-stripe = { git = "https://github.com/arlyon/async-stripe.git", branch = "master", features = ["runtime-async-std-surf"]  }
+actix-cors = "0.5.4"
