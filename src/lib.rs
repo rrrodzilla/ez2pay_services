@@ -27,10 +27,12 @@ pub async fn verify_auth_code(code: u32) -> bool {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    auth.verify(code, 900, timestamp)
+    auth.verify(code, 120, timestamp)
 }
 
-pub async fn notify_auth_code(phone_number: &str) {
+pub async fn notify_auth_code(id: &str) {
+    let product = get_product(&id).await.find_product_by_id.unwrap().account;
+
     let auth_secret: &str =
         &env::var("AUTH_SECRET").unwrap_or_else(|_| panic!("AUTH_SECRET must be set!"));
     let auth = TOTP::new(auth_secret);
@@ -38,11 +40,11 @@ pub async fn notify_auth_code(phone_number: &str) {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let code = auth.generate(900, timestamp);
+    let code = auth.generate(120, timestamp);
     notify_info(
-        phone_number,
+        &product.phone_number.unwrap(),
         &format!(
-            "EZ2PAY.ME: {} is your Product Page Verification Code. Valid for 15 minutes",
+            "EZ2PAY.ME: {} is your Product Page Verification Code. Valid for 2 minutes",
             code
         ),
     )

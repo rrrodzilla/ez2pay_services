@@ -40,7 +40,9 @@ async fn auth_me(web::Path(code): web::Path<u32>) -> impl Responder {
     }
 }
 async fn knock_knock(web::Path(id): web::Path<String>) -> impl Responder {
-    notify_auth_code(&id).await;
+    let harsh = Harsh::builder().salt("ez2pay").length(6).build().unwrap();
+    let prod_id = harsh.decode_hex(&id).unwrap_or_default();
+    notify_auth_code(&prod_id).await;
 
     HttpResponse::Ok()
 }
